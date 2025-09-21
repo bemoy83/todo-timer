@@ -18,7 +18,10 @@ function render() {
 
 	const header = document.createElement("div");
 	header.className = "task-header";
-	header.textContent = task.title;
+	header.innerHTML = `
+	  <span class="drag-handle" aria-label="Reorder" title="Drag to reorder">≡</span>
+	  <span class="task-title">${task.title}</span>
+	`;
 	card.appendChild(header);
 
 	task.subtasks.forEach(st => {
@@ -147,27 +150,30 @@ function getSubtask(tid, sid) {
   function bodyClassRemove(c){ document.body.classList.remove(c); }
 })();
 
-// ===== Drag reorder (cards) — non-janky =====
+// ===== Drag reorder (cards) — handle + visible placeholder =====
 (function enableReorder(){
-  let dragging = null;     // original card element
-  let proxy = null;        // absolute position clone
-  let placeholder = null;  // size holder in the flow
-  let startY = 0, offsetY = 0, listTop = 0;
+  let dragging = null;     // original .card
+  let proxy = null;        // absolute-position clone
+  let placeholder = null;  // visible dashed drop slot
+  let startY = 0, offsetY = 0;
 
   listEl.addEventListener("pointerdown", e => {
-	const card = e.target.closest(".card");
+	const handle = e.target.closest(".drag-handle");
+	if (!handle) return;
+
+	// Need at least 2 cards to reorder
+	if (listEl.querySelectorAll(".card").length < 2) return;
+
+	const card = handle.closest(".card");
 	if (!card) return;
 
-	// Don’t start a drag when starting on a control (like a button inside)
-	if (e.target.closest("button, input, textarea")) return;
-
-	UI_LOCK = true; // freeze render while dragging
+	UI_LOCK = true; // freeze full renders during drag
 	document.body.classList.add("dragging");
 
 	dragging = card;
 	startY = e.clientY;
 
-	// make placeholder with same dimensions
+	// placeholder with the same size as the card
 	const rect = card.getBoundingClientRect();
 	placeholder = document.createElement("div");
 	placeholder.className = "placeholder";
@@ -175,18 +181,17 @@ function getSubtask(tid, sid) {
 	placeholder.style.margin = getComputedStyle(card).margin;
 	card.parentNode.insertBefore(placeholder, card.nextSibling);
 
-	// create proxy clone
+	// create a lifted proxy
 	proxy = card.cloneNode(true);
 	proxy.classList.add("drag-proxy");
 	proxy.style.width = rect.width + "px";
 	proxy.style.top = rect.top + window.scrollY + "px";
-	listTop = listEl.getBoundingClientRect().top + window.scrollY;
-
-	// lift proxy to body so it doesn't influence list layout
+	proxy.style.left = rect.left + "px";
 	document.body.appendChild(proxy);
+
+	// hide the original while dragging
 	card.style.display = "none";
 
-	// capture pointer
 	card.setPointerCapture?.(e.pointerId);
 	card.addEventListener("pointermove", onMove);
 	card.addEventListener("pointerup", onUp, {once:true});
@@ -194,10 +199,11 @@ function getSubtask(tid, sid) {
   });
 
   function onMove(e){
+	if (!proxy) return;
 	offsetY = e.clientY - startY;
 	proxy.style.transform = `translateY(${offsetY}px)`;
 
-	// find desired index by comparing proxy center vs card centers
+	// Calculate where the proxy would land: compare its center with other cards
 	const centerY = proxy.getBoundingClientRect().top + proxy.offsetHeight / 2 + window.scrollY;
 	const cards = Array.from(listEl.querySelectorAll(".card")).filter(c => c !== dragging);
 	let target = null;
@@ -206,28 +212,30 @@ function getSubtask(tid, sid) {
 	  const mid = r.top + window.scrollY + r.height / 2;
 	  if (centerY < mid) { target = c; break; }
 	}
-	// move placeholder before target (or to end)
 	if (target) listEl.insertBefore(placeholder, target);
 	else listEl.appendChild(placeholder);
   }
 
   function onUp(){
-	// drop: place original card where placeholder is
+	// Drop: move the real card to where the placeholder is
 	listEl.insertBefore(dragging, placeholder);
 	dragging.style.display = "";
+
+	// Clean up visuals
 	proxy.remove(); proxy = null;
 	placeholder.remove(); placeholder = null;
 
-	// compute new order & persist
-	const ids = [...listEl.querySelectorAll(".card")].map(c => parseInt(c.id.split("-")[1], 10));
+	// Persist new order
+	const ids = [...listEl.querySelectorAll(".card")]
+	  .map(c => parseInt(c.id.split("-")[1], 10));
 	tasks.sort((a,b)=> ids.indexOf(a.id) - ids.indexOf(b.id));
 	save();
 
 	dragging.removeEventListener("pointermove", onMove);
 	dragging = null;
 	document.body.classList.remove("dragging");
-	UI_LOCK = false; // allow render again
-	render(); // single re-render after drop
+	UI_LOCK = false; // unlock renders
+	render(); // single render after commit
   }
 })();
 
@@ -279,4 +287,23 @@ if(!tasks.length){
   ]}];
   save();
 }
+
+function ensureAtLeastTwoTasks(){
+  if (tasks.length >= 2) return;
+  const nextId = tasks.length ? Math.max(...tasks.map(t=>t.id)) + 1 : 1;
+  const seed = [
+	{ id: nextId,     title: "Demo Task A", subtasks: [
+	  { id: 1, title: "Swipe right to start/stop", time: 0 },
+	  { id: 2, title: "Swipe left to delete",      time: 0 }
+	]},
+	{ id: nextId + 1, title: "Demo Task B", subtasks: [
+	  { id: 1, title: "Try dragging tasks", time: 0 }
+	]}
+  ];
+  if (tasks.length === 0) tasks = seed;
+  else tasks.push(seed[1]); // you already had one, add another
+  save();
+}
+
+ensureAtLeastTwoTasks();
 render();
