@@ -109,3 +109,33 @@ body.dark {
 
 body.dark .card { background: #222; }
 body.dark header, body.dark footer { background: #1c1c1e; }
+
+/* Prevent accidental text selection while gesturing */
+body.dragging, body.swiping {
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: grabbing;
+}
+
+/* Ensure rows don’t shrink or grow during transforms */
+.subtask, .swipe-fore {
+  will-change: transform;
+}
+
+/* During drag we lift the card above the flow but keep its size with a placeholder */
+.drag-proxy {
+  position: absolute;
+  left: 0; right: 0;
+  z-index: 5;
+  pointer-events: none;
+  transform: translateZ(0); /* GPU */
+}
+
+.placeholder {
+  visibility: hidden;
+}
+
+#taskList {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
